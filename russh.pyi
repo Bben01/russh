@@ -1,29 +1,33 @@
-"""An SSH library for Python; written in Rust.
-"""
+""" An SSH library for Python; written in Rust. """
 
+from _typeshed import GenericPath
 from typing import Optional
 
 
 class SessionException(Exception):
-    """Errors with the SSH session. Could be thrown by either SSH or SFTP operations.
-    """
+    """ Errors with the SSH session. Could be thrown by either SSH or SFTP operations. """
 
     ...
 
 
 class SFTPException(Exception):
-    """SFTP operation errors.
-    """
+    """ SFTP operation errors. """
 
     ...
 
 
-class PasswordAuth:
-    """Represents password based authentication.
-    """
+class SSHException(Exception):
+    """ SSH operation errors. """
+
+    ...
+
+
+class Password:
+    """ Represents password based authentication. """
 
     def __init__(self, password: str) -> None:
-        """Creates a new password based authentication method.
+        """
+        Creates a new password based authentication method.
 
         Args:
             password (str): The SSH password.
@@ -32,15 +36,15 @@ class PasswordAuth:
         ...
 
 
-class PrivateKeyAuth:
-    """Represents private-key based authentication.
-    """
+class PrivateKeyFile:
+    """ Represents private-key file based authentication. """
 
-    def __init__(self, private_key: str, passphrase: Optional[str] = None) -> None:
-        """Creates a new private-key based authentication method.
+    def __init__(self, private_key: GenericPath, passphrase: Optional[str] = None) -> None:
+        """
+        Creates a new private-key based authentication method.
 
         Args:
-            private_key (str): The path to the private-key file.
+            private_key (GenericPath): The path to the private-key file.
             passphrase (Optional[str], optional): The passphrase for the private-key file.
                 Defaults to `None`.
         """
@@ -48,33 +52,31 @@ class PrivateKeyAuth:
         ...
 
 
-class AuthMethods:
-    """Represents supported authentication methods.
-    """
+class PrivateKeyMemory:
+    """ Represents private-key based authentication. """
 
-    def __init__(
-            self,
-            password: Optional[PasswordAuth] = None,
-            private_key: Optional[PrivateKeyAuth] = None,
-    ) -> None:
-        """Creates a new instance of authentication methods.
+    def __init__(self, private_key: str, passphrase: Optional[str] = None) -> None:
+        """
+        Creates a new private-key based authentication method.
 
         Args:
-            password (Optional[PasswordAuth], optional): The password based authentication method.
-                Defaults to `None`.
-            private_key (Optional[PrivateKeyAuth], optional): The private-key based authentication method.
+            private_key (str): The private-key.
+            passphrase (Optional[str], optional): The passphrase for the private-key.
                 Defaults to `None`.
         """
 
         ...
 
 
+AuthMethod = Password | PrivateKeyFile | PrivateKeyMemory
+
+
 class ExecOutput:
-    """Represents the output produced when running :func:`SSHClient.exec_command`.
-    """
+    """ Represents the output produced when running :func:`SSHClient.exec_command`. """
 
     def write_stdin(self, data: str) -> None:
-        """Writes the provided data to the `stdin` stream and closes it.
+        """
+        Writes the provided data to the `stdin` stream and closes it.
 
         **NOTE**: Future calls will discard the provided data without doing anything.
 
@@ -88,7 +90,8 @@ class ExecOutput:
         ...
 
     def read_stdout(self) -> str:
-        """Reads the contents of the `stdout` stream and consumes it.
+        """
+        Reads the contents of the `stdout` stream and consumes it.
 
         **NOTE**: Future calls will return an empty string.
 
@@ -99,7 +102,8 @@ class ExecOutput:
         ...
 
     def read_stderr(self) -> str:
-        """Reads the contents of the `stderr` stream and consumes it.
+        """
+        Reads the contents of the `stderr` stream and consumes it.
 
         **NOTE**: Future calls will return an empty string.
 
@@ -110,7 +114,8 @@ class ExecOutput:
         ...
 
     def exit_status(self) -> int:
-        """Retrieves the exit status of the command and closes the channel and all streams.
+        """
+        Retrieves the exit status of the command and closes the channel and all streams.
 
         **NOTE**: Future calls will return 0.
 
@@ -123,7 +128,8 @@ class ExecOutput:
         ...
 
     def close(self) -> None:
-        """Consumes all streams and closes the underlying channel if it exists and is active.
+        """
+        Consumes all streams and closes the underlying channel if it exists and is active.
 
         If there is no active channel, then this function does nothing.
 
@@ -135,11 +141,11 @@ class ExecOutput:
 
 
 class File:
-    """A file on a remote server.
-    """
+    """ A file on a remote server. """
 
     def read(self) -> str:
-        """Reads and returns the contents of the file.
+        """
+        Reads and returns the contents of the file.
 
         Returns:
             The contents of the file.
@@ -148,7 +154,8 @@ class File:
         ...
 
     def write(self, data: str) -> None:
-        """Writes the specified data to the file.
+        """
+        Writes the specified data to the file.
 
         Args:
             data (str): The data to write to the file.
@@ -161,11 +168,11 @@ class File:
 
 
 class SFTPClient:
-    """The SFTP client.
-    """
+    """ The SFTP client. """
 
     def chdir(self, dir: Optional[str] = None) -> None:
-        """Changes the current working directory to the specified directory.
+        """
+        Changes the current working directory to the specified directory.
 
         If the specified directory is `None`, then the current working directory is unset.
 
@@ -185,7 +192,8 @@ class SFTPClient:
         ...
 
     def getcwd(self) -> Optional[str]:
-        """Returns the current working directory.
+        """
+        Returns the current working directory.
 
         Returns:
             The current working directory.
@@ -193,17 +201,15 @@ class SFTPClient:
 
         ...
 
-    def mkdir(self, dir: str, mode: int = 511) -> None:
-        ...
+    def mkdir(self, dir: str, mode: int = 511) -> None: ...
 
-    def remove(self, path: str) -> None:
-        ...
+    def remove(self, path: str) -> None: ...
 
-    def rmdir(self, dir: str) -> None:
-        ...
+    def rmdir(self, dir: str) -> None: ...
 
     def open(self, filename: str, mode: str = 'r') -> File:
-        """Opens a file on the remote server.
+        """
+        Opens a file on the remote server.
 
         Args:
             filename (str): The name of the file (if file is in `cwd`) OR the path to the file.
@@ -216,7 +222,8 @@ class SFTPClient:
         ...
 
     def file(self, filename: str, mode: str = 'r') -> File:
-        """Opens a file on the remote server.
+        """
+        Opens a file on the remote server.
 
         **NOTE**: This method is just an alias to :func:`SFTPClient.open` to mimic compatibility with paramiko.
 
@@ -231,7 +238,8 @@ class SFTPClient:
         ...
 
     def get(self, remotepath: str, localpath: str) -> None:
-        """Copies a file from the remote server to the local host.
+        """
+        Copies a file from the remote server to the local host.
 
         Args:
             remotepath (str): The remote file path.
@@ -244,7 +252,8 @@ class SFTPClient:
         ...
 
     def put(self, localpath: str, remotepath: str) -> None:
-        """Copies a local file to the remote server.
+        """
+        Copies a local file to the remote server.
 
         Args:
             localpath (str): The path to the local file.
@@ -257,7 +266,8 @@ class SFTPClient:
         ...
 
     def is_closed(self) -> bool:
-        """Checks if the SFTP session is closed.
+        """
+        Checks if the SFTP session is closed.
 
         Returns:
             Whether SFTP session is closed.
@@ -266,7 +276,8 @@ class SFTPClient:
         ...
 
     def close(self) -> None:
-        """Closes the SFTP session.
+        """
+        Closes the SFTP session.
 
         Returns:
             None
@@ -276,36 +287,28 @@ class SFTPClient:
 
 
 class SSHClient:
-    """The SSH client.
-    """
+    """ The SSH client. """
 
     def __init__(self) -> None:
-        """Creates a new SSH client.
-        """
+        """ Creates a new SSH client. """
 
         ...
 
     def connect(
             self,
             host: str,
-            username: str,
-            auth: AuthMethods,
+            auth: AuthMethod,
+            username: str = "root",
             port: int = 22,
             timeout: int = 30,
     ) -> None:
-        """Establishes an SSH connection and sets the created session on the client.
-
-        If multiple authentication methods are specified, then they are all attempted one at a time
-        (until one succeeds) in the following order:
-
-        :class:`PasswordAuth` > :class:`PrivateKeyAuth`
-
-        If all the authentication methods fail, the exception from the last attempted method is raised.
+        """
+        Establishes an SSH connection and sets the created session on the client.
 
         Args:
             host (str): The host name or address.
-            username (str): The SSH username.
-            auth (str): The authentication methods to use.
+            auth (str): The authentication method to use.
+            username (str): The SSH username. Defaults to root
             port (int, optional): The SSH port. Defaults to 22.
             timeout (int, optional): The timeout for the TCP connection (in seconds). Defaults to 30.
 
@@ -316,7 +319,8 @@ class SSHClient:
         ...
 
     def open_sftp(self) -> SFTPClient:
-        """Opens an SFTP session using the SSH session.
+        """
+        Opens an SFTP session using the SSH session.
 
         Fails if there is no active SSH session (if :func:`SSHClient.connect` was not called).
 
@@ -327,7 +331,8 @@ class SSHClient:
         ...
 
     def exec_command(self, command: str) -> ExecOutput:
-        """Executes a command using the established session and returns the output.
+        """
+        Executes a command using the established session and returns the output.
 
         Args:
             command (str): The command to run.
@@ -339,7 +344,8 @@ class SSHClient:
         ...
 
     def close(self):
-        """Closes the underlying session.
+        """
+        Closes the underlying session.
 
         Returns:
             None
