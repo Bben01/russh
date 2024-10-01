@@ -3,10 +3,11 @@
 use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::auth::{Auth, AuthMethod};
 use pyo3::exceptions::{
     PyConnectionRefusedError, PyException, PyFileExistsError, PyFileNotFoundError, PyIOError,
     PyPermissionError, PyValueError,
@@ -17,11 +18,12 @@ use ssh2::{Channel, ErrorCode, OpenFlags, OpenType, Session, Sftp, Stream};
 /// Default SSH port.
 const DEFAULT_PORT: u16 = 22;
 /// Default connection timeout.
-const DEFAULT_TIMEOUT: u32 = 30;
+const DEFAULT_TIMEOUT: u64 = 30;
 
 // Custom Python exception types.
 pyo3::create_exception!(russh, SessionException, PyException);
 pyo3::create_exception!(russh, SFTPException, PyException);
+pyo3::create_exception!(russh, SSHException, PyException);
 
 /// Convenience function to map Rust errors to appropriate Python exceptions.
 ///
@@ -56,76 +58,6 @@ where
     }
 
     PyErr::new::<PyException, _>(err.to_string())
-}
-
-#[pyclass]
-#[derive(Clone)]
-/// Represents password-based authentication.
-pub struct PasswordAuth(pub String);
-
-#[pymethods]
-impl PasswordAuth {
-    #[new]
-    /// Creates a new [`PasswordAuth`].
-    ///
-    /// # Arguments
-    ///
-    /// * `password` - The password.
-    pub fn __new__(password: String) -> Self {
-        Self(password)
-    }
-}
-
-#[pyclass]
-#[derive(Clone)]
-/// Represents private-key-based authentication.
-pub struct PrivateKeyAuth {
-    /// The path to the private-key file.
-    pub private_key: String,
-    /// The passphrase for the private-key file.
-    pub passphrase: Option<String>,
-}
-
-#[pymethods]
-impl PrivateKeyAuth {
-    #[new]
-    /// Creates a new [`PrivateKeyAuth`].
-    ///
-    /// # Arguments
-    ///
-    /// * `private_key` - The path to the private-key file.
-    /// * `passphrase` - The password for the private-key file.
-    pub fn __new__(private_key: String, passphrase: Option<String>) -> Self {
-        Self {
-            private_key,
-            passphrase,
-        }
-    }
-}
-
-#[pyclass]
-#[derive(Clone)]
-/// Represents supported authentication methods.
-pub struct AuthMethods {
-    /// Password-based authentication method.
-    pub password: Option<PasswordAuth>,
-    /// Private-key-based authentication method.
-    pub private_key: Option<PrivateKeyAuth>,
-}
-
-#[pymethods]
-impl AuthMethods {
-    #[new]
-    /// Creates a new [`AuthMethods`].
-    ///
-    /// * `password` - Password-based authentication method.
-    /// * `private_key` - Private-key-based authentication method.
-    pub fn __new__(password: Option<PasswordAuth>, private_key: Option<PrivateKeyAuth>) -> Self {
-        Self {
-            password,
-            private_key,
-        }
-    }
 }
 
 #[pyclass]
@@ -296,17 +228,17 @@ impl SFTPClient {
     /// # Arguments
     ///
     /// * `dir` - The directory to change to.
+    #[pyo3(signature = (dir=None))]
     pub fn chdir(&mut self, dir: Option<String>) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
             if let Some(path) = &dir {
                 let path = Path::new(&path);
 
-                if let Err(_) = client.opendir(path) {
-                    return Err(io::Error::new(
+                if client.opendir(path).is_err() {
+                    return Err(excp_from_err(io::Error::new(
                         ErrorKind::NotFound,
                         format!("Path {} does not exist on server", path.display()),
-                    ))
-                    .map_err(excp_from_err)?;
+                    )))?;
                 }
             }
 
@@ -329,12 +261,13 @@ impl SFTPClient {
     ///
     /// * `dir` The directory to create.
     /// * `mode` - POSIX-style permissions for the newly-created folder. Defaults to 511.
+    #[pyo3(signature = (dir, mode=None))]
     pub fn mkdir(&mut self, dir: String, mode: Option<i32>) -> PyResult<()> {
         let mode = mode.unwrap_or(511);
 
         if let Some(client) = self.client.as_mut() {
             let path = path_from_string(self.cwd.clone(), dir);
-            return Ok(client.mkdir(&path, mode).map_err(excp_from_err)?);
+            return client.mkdir(&path, mode).map_err(excp_from_err);
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -350,7 +283,7 @@ impl SFTPClient {
     pub fn unlink(&mut self, path: String) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
             let path = path_from_string(self.cwd.clone(), path);
-            return Ok(client.unlink(&path).map_err(excp_from_err)?);
+            return client.unlink(&path).map_err(excp_from_err);
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -379,7 +312,7 @@ impl SFTPClient {
     pub fn rmdir(&mut self, dir: String) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
             let path = path_from_string(self.cwd.clone(), dir);
-            return Ok(client.rmdir(&path).map_err(excp_from_err)?);
+            return client.rmdir(&path).map_err(excp_from_err);
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -391,6 +324,7 @@ impl SFTPClient {
     ///
     /// * `filename` - The name of the file (if file is in `cwd`) OR the path to the file.
     /// * `mode` - Python-style file mode.
+    #[pyo3(signature = (filename, mode=None))]
     pub fn open(&mut self, filename: String, mode: Option<&str>) -> PyResult<File> {
         let flags = mode.unwrap_or("r");
         let flags = match flags {
@@ -423,6 +357,7 @@ impl SFTPClient {
     ///
     /// * `filename` - The name of the file (if the file is in `cwd`) OR the path to the file.
     /// * `mode` - Python-style file mode.
+    #[pyo3(signature = (filename, mode=None))]
     pub fn file(&mut self, filename: String, mode: Option<&str>) -> PyResult<File> {
         self.open(filename, mode)
     }
@@ -441,7 +376,7 @@ impl SFTPClient {
             let mut file = client.open(&remotepath).map_err(excp_from_err)?;
             file.read_to_string(&mut buf).map_err(excp_from_err)?;
 
-            return Ok(fs::write(&localpath, buf).map_err(excp_from_err)?);
+            return fs::write(&localpath, buf).map_err(excp_from_err);
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -460,7 +395,7 @@ impl SFTPClient {
             let content = fs::read_to_string(&localpath).map_err(excp_from_err)?;
             let mut file = client.create(&remotepath).map_err(excp_from_err)?;
 
-            return Ok(file.write_all(content.as_bytes()).map_err(excp_from_err)?);
+            return file.write_all(content.as_bytes()).map_err(excp_from_err);
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -478,6 +413,7 @@ impl SFTPClient {
 }
 
 #[pyclass]
+#[derive(Default)]
 /// The SSH client.
 pub struct SSHClient {
     /// Established SSH session.
@@ -488,8 +424,8 @@ pub struct SSHClient {
 impl SSHClient {
     #[new]
     /// Creates a new [`SSHClient`].
-    pub fn __new__() -> Self {
-        Self { sess: None }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Establishes an SSH connection and sets the created session on the client.
@@ -508,60 +444,30 @@ impl SSHClient {
     /// * `auth` - The authentication methods to use.
     /// * `port` The SSH port. Defaults to 22.
     /// * `timeout` - The timeout for the TCP connection (in seconds). Defaults to 30.
+    #[pyo3(signature = (host, auth, username=None, port=None, timeout=None))]
     pub fn connect(
         &mut self,
         host: String,
-        username: String,
-        auth: AuthMethods,
+        auth: AuthMethod,
+        username: Option<&str>,
         port: Option<u16>,
-        timeout: Option<u32>,
+        timeout: Option<u64>,
     ) -> PyResult<()> {
         let port = port.unwrap_or(DEFAULT_PORT);
         let timeout = timeout.unwrap_or(DEFAULT_TIMEOUT);
-        let addr: SocketAddr = format!("{host}:{port}").parse().map_err(excp_from_err)?;
-        let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(timeout as u64))
+        let addr: SocketAddr = (host, port)
+            .to_socket_addrs()
+            .map_err(excp_from_err)?
+            .next()
+            .ok_or(SSHException::new_err("SFTP server address not found"))?;
+        let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(timeout))
             .map_err(excp_from_err)?;
 
         let mut sess = Session::new().map_err(excp_from_err)?;
         sess.set_tcp_stream(tcp);
         sess.handshake().map_err(excp_from_err)?;
-
-        let mut last_error = None;
-
-        if let Some(password) = auth.password {
-            if let Err(err) = sess
-                .userauth_password(&username, &password.0)
-                .map_err(excp_from_err)
-            {
-                last_error = Some(err);
-            } else {
-                self.sess = Some(sess);
-
-                return Ok(());
-            }
-        }
-
-        if let Some(private_key) = auth.private_key {
-            if let Err(err) = sess
-                .userauth_pubkey_file(
-                    &username,
-                    None,
-                    Path::new(&private_key.private_key),
-                    private_key.passphrase.as_deref(),
-                )
-                .map_err(excp_from_err)
-            {
-                last_error = Some(err);
-            } else {
-                self.sess = Some(sess);
-
-                return Ok(());
-            }
-        }
-
-        if let Some(err) = last_error {
-            return Err(err);
-        }
+        auth.authenticate(username.unwrap_or("root"), &mut sess)
+            .map_err(excp_from_err)?;
 
         Ok(())
     }

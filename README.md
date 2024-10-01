@@ -1,4 +1,4 @@
-# russh
+# russhy
 
 ![maintenance-status](https://img.shields.io/badge/maintenance-experimental-blue.svg)
 [![PyPI version](https://badge.fury.io/py/russh.svg)](https://badge.fury.io/py/russh)
@@ -11,9 +11,11 @@
 
 An SSH library for Python; written in Rust.
 
+This is a fork or russh
+
 ## About
 
-`russh` is an easy-to-use SSH library for Python, written in Rust using [PyO3](https://github.com/PyO3/pyo3).
+`russhy` is an easy-to-use SSH library for Python, written in Rust using [PyO3](https://github.com/PyO3/pyo3).
 
 This library aims to be as similar to [paramiko](https://pypi.org/project/paramiko/) as possible (for ease of use and familiarity), while also adding some opiniated features/improvements.
 Currently, this library supports the SSHv2 protocol by leveraging `libssh2` (using the [ssh2](https://crates.io/crates/ssh2) crate).
@@ -21,8 +23,6 @@ Currently, this library supports the SSHv2 protocol by leveraging `libssh2` (usi
 This library does not aim to replace paramiko, or any other Python SSH library. Rather, it's just a proof-of-concept to test the viability of a Python library written in Rust.
 
 **NOTE 1**: This library is currently a work-in-progress, and should not be used in production scenarios.
-
-**NOTE 2**: This library is not related to/affiliated with the [russh](https://crates.io/crates/russh) crate. The similarity in the names of both projects is purely coincidental.
 
 ## Features
 
