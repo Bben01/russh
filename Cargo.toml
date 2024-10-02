@@ -1,6 +1,6 @@
 [package]
 name = "russhy"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Nikhil Prabhu <nikhilprabhu98@gmail.com>"]
 license = "MIT"

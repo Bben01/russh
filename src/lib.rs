@@ -8,9 +8,6 @@ use crate::auth::{Password, PrivateKeyFile};
 mod ssh;
 mod auth;
 
-#[cfg(not(unix))]
-compile_error!("This program isn't compatible non unix platforms.");
-
 #[pymodule]
 fn russhy(py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("SessionException", py.get_type_bound::<SessionException>())?;

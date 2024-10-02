@@ -1,13 +1,13 @@
 # russhy
 
 ![maintenance-status](https://img.shields.io/badge/maintenance-experimental-blue.svg)
-[![PyPI version](https://badge.fury.io/py/russh.svg)](https://badge.fury.io/py/russh)
-[![Supported Python versions](https://img.shields.io/pypi/pyversions/russh.svg)](https://pypi.python.org/pypi/russh/)
+[![PyPI version](https://badge.fury.io/py/russh.svg)](https://badge.fury.io/py/russhy)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/russh.svg)](https://pypi.python.org/pypi/russhy/)
 [![PyPI license](https://img.shields.io/pypi/l/ansicolortags.svg)](https://pypi.python.org/pypi/ansicolortags/)
 [![PyPI status](https://img.shields.io/pypi/status/ansicolortags.svg)](https://pypi.python.org/pypi/ansicolortags/)
 ![Workflow: publish](https://github.com/nikhil-prabhu/russh/actions/workflows/publish.yml/badge.svg)
 
-![russh: logo](assets/logo.png)
+![russhy: logo](assets/logo.png)
 
 An SSH library for Python; written in Rust.
 
@@ -22,7 +22,8 @@ Currently, this library supports the SSHv2 protocol by leveraging `libssh2` (usi
 
 This library does not aim to replace paramiko, or any other Python SSH library. Rather, it's just a proof-of-concept to test the viability of a Python library written in Rust.
 
-**NOTE 1**: This library is currently a work-in-progress, and should not be used in production scenarios.
+> [!NOTE]  
+> This library doesn't ship windows wheels, you should compile them yourself if you want to use it
 
 ## Features
 
@@ -34,7 +35,3 @@ This library does not aim to replace paramiko, or any other Python SSH library. 
 - Fast and memory-safe, thanks to the underlying Rust core.
 - Extensible and well-documented.
 - Stubs are included with proper type-annotations for all symbols.
-
-## Contributing
-
-TODO

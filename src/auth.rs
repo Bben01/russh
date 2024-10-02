@@ -14,6 +14,7 @@ pub enum AuthMethod {
     #[pyo3(transparent, annotation = "PrivateKeyFile")]
     PrivateKeyFile(PrivateKeyFile),
     #[pyo3(transparent, annotation = "PrivateKeyMemory")]
+    #[cfg(unix)]
     PrivateKeyMemory(PrivateKeyMemory),
 }
 
@@ -22,6 +23,7 @@ impl Auth for AuthMethod {
         match self {
             AuthMethod::Password(p) => p.authenticate(username, session),
             AuthMethod::PrivateKeyFile(p) => p.authenticate(username, session),
+            #[cfg(unix)]
             AuthMethod::PrivateKeyMemory(p) => p.authenticate(username, session),
         }
     }
@@ -90,6 +92,7 @@ impl Auth for PrivateKeyFile {
     }
 }
 
+#[cfg(unix)]
 #[pyclass]
 #[derive(Clone)]
 /// Represents private-key-based authentication.
@@ -100,6 +103,7 @@ pub struct PrivateKeyMemory {
     pub passphrase: Option<String>,
 }
 
+#[cfg(unix)]
 #[pymethods]
 impl PrivateKeyMemory {
     #[new]
@@ -118,6 +122,7 @@ impl PrivateKeyMemory {
     }
 }
 
+#[cfg(unix)]
 impl Auth for PrivateKeyMemory {
     fn authenticate(&self, username: &str, session: &mut Session) -> Result<(), ssh2::Error> {
         session.userauth_pubkey_memory(
