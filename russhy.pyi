@@ -347,6 +347,11 @@ class SSHClient:
 
         ...
 
+    def authenticated(self) -> bool:
+        """ Checks if the current session is authenticated. """
+
+        ...
+
     def close(self):
         """
         Closes the underlying session.

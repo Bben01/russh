@@ -21,9 +21,9 @@ const DEFAULT_PORT: u16 = 22;
 const DEFAULT_TIMEOUT: u64 = 30;
 
 // Custom Python exception types.
-pyo3::create_exception!(russh, SessionException, PyException);
-pyo3::create_exception!(russh, SFTPException, PyException);
-pyo3::create_exception!(russh, SSHException, PyException);
+pyo3::create_exception!(russhy, SessionException, PyException);
+pyo3::create_exception!(russhy, SFTPException, PyException);
+pyo3::create_exception!(russhy, SSHException, PyException);
 
 /// Convenience function to map Rust errors to appropriate Python exceptions.
 ///
@@ -430,18 +430,11 @@ impl SSHClient {
 
     /// Establishes an SSH connection and sets the created session on the client.
     ///
-    /// If multiple authentication methods are specified, then they are all attempted one at a time
-    /// (until one succeeds) in the following order:
-    ///
-    /// [`PasswordAuth`] > [`PrivateKeyAuth`]
-    ///
-    /// If all the authentication methods fail, the error message from the last attempted method is returned.
-    ///
     /// # Arguments
     ///
     /// * `host` - The host name or address.
-    /// * `username` - The SSH username.
-    /// * `auth` - The authentication methods to use.
+    /// * `auth` - The authentication method to use.
+    /// * `username` - The SSH username. Defaults to root
     /// * `port` The SSH port. Defaults to 22.
     /// * `timeout` - The timeout for the TCP connection (in seconds). Defaults to 30.
     #[pyo3(signature = (host, auth, username=None, port=None, timeout=None))]
@@ -460,6 +453,7 @@ impl SSHClient {
             .map_err(excp_from_err)?
             .next()
             .ok_or(SSHException::new_err("SFTP server address not found"))?;
+
         let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(timeout))
             .map_err(excp_from_err)?;
 
@@ -468,6 +462,8 @@ impl SSHClient {
         sess.handshake().map_err(excp_from_err)?;
         auth.authenticate(username.unwrap_or("root"), &mut sess)
             .map_err(excp_from_err)?;
+
+        self.sess.replace(sess);
 
         Ok(())
     }
@@ -513,6 +509,10 @@ impl SSHClient {
             stdout,
             stderr,
         })
+    }
+
+    pub fn authenticated(&self) -> bool {
+        self.sess.as_ref().is_some_and(|sess| sess.authenticated())
     }
 
     /// Closes the underlying session.
