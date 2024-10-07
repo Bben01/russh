@@ -78,14 +78,14 @@ AuthMethod = Password | PrivateKeyFile | PrivateKeyMemory
 class ExecOutput:
     """ Represents the output produced when running :func:`SSHClient.exec_command`. """
 
-    def write_stdin(self, data: str) -> None:
+    def write_stdin(self, data: bytes) -> None:
         """
         Writes the provided data to the `stdin` stream and closes it.
 
         **NOTE**: Future calls will discard the provided data without doing anything.
 
         Args:
-            data (str): The data to write to the stream.
+            data (bytes): The data to write to the stream.
 
         Returns:
             None
@@ -93,7 +93,7 @@ class ExecOutput:
 
         ...
 
-    def read_stdout(self) -> str:
+    def read_stdout(self) -> bytes:
         """
         Reads the contents of the `stdout` stream and consumes it.
 
@@ -105,7 +105,7 @@ class ExecOutput:
 
         ...
 
-    def read_stderr(self) -> str:
+    def read_stderr(self) -> bytes:
         """
         Reads the contents of the `stderr` stream and consumes it.
 
@@ -147,7 +147,7 @@ class ExecOutput:
 class File:
     """ A file on a remote server. """
 
-    def read(self) -> str:
+    def read(self) -> bytes:
         """
         Reads and returns the contents of the file.
 
@@ -157,12 +157,12 @@ class File:
 
         ...
 
-    def write(self, data: str) -> None:
+    def write(self, data: bytes) -> None:
         """
         Writes the specified data to the file.
 
         Args:
-            data (str): The data to write to the file.
+            data (bytes): The data to write to the file.
 
         Returns:
             None
@@ -174,7 +174,7 @@ class File:
 class SFTPClient:
     """ The SFTP client. """
 
-    def chdir(self, dir: Optional[str] = None) -> None:
+    def chdir(self, dir: Optional[GenericPath] = None) -> None:
         """
         Changes the current working directory to the specified directory.
 
@@ -187,7 +187,7 @@ class SFTPClient:
         future, but is not guaranteed.
 
         Args:
-            dir (str): The directory to change to.
+            dir (GenericPath): The directory to change to.
 
         Returns:
             None
@@ -195,7 +195,7 @@ class SFTPClient:
 
         ...
 
-    def getcwd(self) -> Optional[str]:
+    def getcwd(self) -> Optional[GenericPath]:
         """
         Returns the current working directory.
 
@@ -205,18 +205,18 @@ class SFTPClient:
 
         ...
 
-    def mkdir(self, dir: str, mode: int = 511) -> None: ...
+    def mkdir(self, dir: GenericPath, mode: int = 511) -> None: ...
 
-    def remove(self, path: str) -> None: ...
+    def remove(self, path: GenericPath) -> None: ...
 
-    def rmdir(self, dir: str) -> None: ...
+    def rmdir(self, dir: GenericPath) -> None: ...
 
-    def open(self, filename: str, mode: str = 'r') -> File:
+    def open(self, filename: GenericPath, mode: str = 'r') -> File:
         """
         Opens a file on the remote server.
 
         Args:
-            filename (str): The name of the file (if file is in `cwd`) OR the path to the file.
+            filename (GenericPath): The name of the file (if file is in `cwd`) OR the path to the file.
             mode (str, optional): Python-style file mode. Defaults to 'r'.
 
         Returns:
@@ -225,14 +225,14 @@ class SFTPClient:
 
         ...
 
-    def file(self, filename: str, mode: str = 'r') -> File:
+    def file(self, filename: GenericPath, mode: str = 'r') -> File:
         """
         Opens a file on the remote server.
 
         **NOTE**: This method is just an alias to :func:`SFTPClient.open` to mimic compatibility with paramiko.
 
         Args:
-            filename (str): The name of the file (if file is in `cwd`) OR the path to the file.
+            filename (GenericPath): The name of the file (if file is in `cwd`) OR the path to the file.
             mode (str, optional): Python-style file mode. Defaults to 'r'.
 
         Returns:
@@ -241,13 +241,13 @@ class SFTPClient:
 
         ...
 
-    def get(self, remotepath: str, localpath: str) -> None:
+    def get(self, remotepath: GenericPath, localpath: GenericPath) -> None:
         """
         Copies a file from the remote server to the local host.
 
         Args:
-            remotepath (str): The remote file path.
-            localpath (str): The local path to copy the file to.
+            remotepath (GenericPath): The remote file path.
+            localpath (GenericPath): The local path to copy the file to.
 
         Returns:
             None
@@ -255,13 +255,13 @@ class SFTPClient:
 
         ...
 
-    def put(self, localpath: str, remotepath: str) -> None:
+    def put(self, localpath: GenericPath, remotepath: GenericPath) -> None:
         """
         Copies a local file to the remote server.
 
         Args:
-            localpath (str): The path to the local file.
-            remotepath (str): The remote path to copy the file to.
+            localpath (GenericPath): The path to the local file.
+            remotepath (GenericPath): The remote path to copy the file to.
 
         Returns:
 

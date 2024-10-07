@@ -1,5 +1,6 @@
 //! SSH types and methods.
 
+use std::borrow::Cow;
 use std::error::Error;
 use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
@@ -81,10 +82,10 @@ impl ExecOutput {
     /// # Arguments
     ///
     /// * `data` - The data to write to the stream.
-    pub fn write_stdin(&mut self, data: String) -> PyResult<()> {
+    pub fn write_stdin(&mut self, data: &[u8]) -> PyResult<()> {
         if let Some(mut stdin) = self.stdin.take() {
             if let Some(channel) = self.channel.as_mut() {
-                stdin.write_all(data.as_bytes()).map_err(excp_from_err)?;
+                stdin.write_all(data).map_err(excp_from_err)?;
                 stdin.flush().map_err(excp_from_err)?;
 
                 channel.send_eof().map_err(excp_from_err)?;
@@ -97,27 +98,27 @@ impl ExecOutput {
     /// Reads the contents of the `stdout` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stdout(&mut self) -> PyResult<String> {
-        let mut buf = String::new();
+    fn read_stdout(&mut self) -> PyResult<Cow<[u8]>> {
+        let mut buf = Vec::new();
 
         if let Some(mut stdout) = self.stdout.take() {
-            stdout.read_to_string(&mut buf).map_err(excp_from_err)?;
+            stdout.read_to_end(&mut buf).map_err(excp_from_err)?;
         }
 
-        Ok(buf)
+        Ok(Cow::from(buf))
     }
 
     /// Reads the contents of the `stderr` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stderr(&mut self) -> PyResult<String> {
-        let mut buf = String::new();
+    fn read_stderr(&mut self) -> PyResult<Cow<[u8]>> {
+        let mut buf = Vec::new();
 
         if let Some(mut stderr) = self.stderr.take() {
-            stderr.read_to_string(&mut buf).map_err(excp_from_err)?;
+            stderr.read_to_end(&mut buf).map_err(excp_from_err)?;
         }
 
-        Ok(buf)
+        Ok(Cow::from(buf))
     }
 
     /// Retrieves the exit status of the command and closes the channel and all streams.
@@ -168,16 +169,12 @@ impl ExecOutput {
 ///
 /// * `base` - Optional base path.
 /// * `path` - The child path.
-fn path_from_string(base: Option<String>, path: String) -> PathBuf {
+fn path_from_base(base: Option<&Path>, path: impl AsRef<Path>) -> PathBuf {
     if let Some(base) = base {
-        let mut base_path = PathBuf::new();
-        base_path.push(base);
-        base_path.push(path);
-
-        return base_path;
+        return base.join(path);
     }
 
-    Path::new(&path).to_path_buf()
+    path.as_ref().to_path_buf()
 }
 
 #[pyclass]
@@ -187,11 +184,11 @@ pub struct File(pub ssh2::File);
 #[pymethods]
 impl File {
     /// Reads and returns the contents of the file.
-    pub fn read(&mut self) -> PyResult<String> {
-        let mut buf = String::new();
-        self.0.read_to_string(&mut buf).map_err(excp_from_err)?;
+    pub fn read(&mut self) -> PyResult<Cow<[u8]>> {
+        let mut buf = Vec::new();
+        self.0.read_to_end(&mut buf).map_err(excp_from_err)?;
 
-        Ok(buf)
+        Ok(Cow::from(buf))
     }
 
     /// Writes the specified data to the file.
@@ -199,18 +196,19 @@ impl File {
     /// # Arguments
     ///
     /// * `data` - The data to write to the file.
-    pub fn write(&mut self, data: String) -> PyResult<()> {
-        self.0.write_all(data.as_bytes()).map_err(excp_from_err)?;
+    pub fn write(&mut self, data: &[u8]) -> PyResult<()> {
+        self.0.write_all(data).map_err(excp_from_err)?;
         self.0.flush().map_err(excp_from_err)
     }
 }
+
 #[pyclass]
 /// The SFTP client.
 pub struct SFTPClient {
     /// Underlying SFTP client.
     client: Option<Sftp>,
     /// Current working directory.
-    cwd: Option<String>,
+    cwd: Option<PathBuf>,
 }
 
 #[pymethods]
@@ -229,11 +227,9 @@ impl SFTPClient {
     ///
     /// * `dir` - The directory to change to.
     #[pyo3(signature = (dir=None))]
-    pub fn chdir(&mut self, dir: Option<String>) -> PyResult<()> {
+    pub fn chdir(&mut self, dir: Option<PathBuf>) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
             if let Some(path) = &dir {
-                let path = Path::new(&path);
-
                 if client.opendir(path).is_err() {
                     return Err(excp_from_err(io::Error::new(
                         ErrorKind::NotFound,
@@ -251,7 +247,7 @@ impl SFTPClient {
     }
 
     /// Returns the current working directory.
-    pub fn getcwd(&self) -> Option<String> {
+    pub fn getcwd(&self) -> Option<PathBuf> {
         self.cwd.clone()
     }
 
@@ -262,11 +258,11 @@ impl SFTPClient {
     /// * `dir` The directory to create.
     /// * `mode` - POSIX-style permissions for the newly-created folder. Defaults to 511.
     #[pyo3(signature = (dir, mode=None))]
-    pub fn mkdir(&mut self, dir: String, mode: Option<i32>) -> PyResult<()> {
+    pub fn mkdir(&mut self, dir: PathBuf, mode: Option<i32>) -> PyResult<()> {
         let mode = mode.unwrap_or(511);
 
         if let Some(client) = self.client.as_mut() {
-            let path = path_from_string(self.cwd.clone(), dir);
+            let path = path_from_base(self.cwd.as_deref(), &dir);
             return client.mkdir(&path, mode).map_err(excp_from_err);
         }
 
@@ -280,9 +276,9 @@ impl SFTPClient {
     /// # Arguments
     ///
     /// * `path` - The path to the file to remove.
-    pub fn unlink(&mut self, path: String) -> PyResult<()> {
+    pub fn unlink(&mut self, path: PathBuf) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
-            let path = path_from_string(self.cwd.clone(), path);
+            let path = path_from_base(self.cwd.as_deref(), path);
             return client.unlink(&path).map_err(excp_from_err);
         }
 
@@ -298,7 +294,7 @@ impl SFTPClient {
     /// # Arguments
     ///
     /// * `path` - The path to the file to remove.
-    pub fn remove(&mut self, path: String) -> PyResult<()> {
+    pub fn remove(&mut self, path: PathBuf) -> PyResult<()> {
         self.unlink(path)
     }
 
@@ -309,9 +305,9 @@ impl SFTPClient {
     /// # Arguments
     ///
     /// * `dir` - The path to the directory to remove.
-    pub fn rmdir(&mut self, dir: String) -> PyResult<()> {
+    pub fn rmdir(&mut self, dir: PathBuf) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
-            let path = path_from_string(self.cwd.clone(), dir);
+            let path = path_from_base(self.cwd.as_deref(), dir);
             return client.rmdir(&path).map_err(excp_from_err);
         }
 
@@ -325,20 +321,20 @@ impl SFTPClient {
     /// * `filename` - The name of the file (if file is in `cwd`) OR the path to the file.
     /// * `mode` - Python-style file mode.
     #[pyo3(signature = (filename, mode=None))]
-    pub fn open(&mut self, filename: String, mode: Option<&str>) -> PyResult<File> {
+    pub fn open(&mut self, filename: PathBuf, mode: Option<&str>) -> PyResult<File> {
         let flags = mode.unwrap_or("r");
         let flags = match flags {
-            "r" => OpenFlags::READ,
+            "r" | "rb" => OpenFlags::READ,
             "r+" => OpenFlags::READ | OpenFlags::WRITE,
-            "w" => OpenFlags::TRUNCATE | OpenFlags::WRITE,
+            "w" | "wb" => OpenFlags::TRUNCATE | OpenFlags::WRITE,
             "w+" => OpenFlags::WRITE | OpenFlags::TRUNCATE | OpenFlags::READ,
-            "a" => OpenFlags::CREATE | OpenFlags::APPEND,
+            "a" | "ab" => OpenFlags::CREATE | OpenFlags::APPEND,
             "a+" => OpenFlags::CREATE | OpenFlags::APPEND | OpenFlags::READ | OpenFlags::WRITE,
             _ => return Err(PyValueError::new_err(format!("invalid mode: '{}'", flags))),
         };
 
         if let Some(client) = self.client.as_mut() {
-            let path = path_from_string(self.cwd.clone(), filename);
+            let path = path_from_base(self.cwd.as_deref(), filename);
             return Ok(File(
                 client
                     .open_mode(&path, flags, 0o644, OpenType::File)
@@ -358,7 +354,7 @@ impl SFTPClient {
     /// * `filename` - The name of the file (if the file is in `cwd`) OR the path to the file.
     /// * `mode` - Python-style file mode.
     #[pyo3(signature = (filename, mode=None))]
-    pub fn file(&mut self, filename: String, mode: Option<&str>) -> PyResult<File> {
+    pub fn file(&mut self, filename: PathBuf, mode: Option<&str>) -> PyResult<File> {
         self.open(filename, mode)
     }
 
@@ -368,15 +364,16 @@ impl SFTPClient {
     ///
     /// * `remotepath` - The remote file path.
     /// * `localpath` - The local path to copy the file to.
-    pub fn get(&mut self, remotepath: String, localpath: String) -> PyResult<()> {
+    pub fn get(&mut self, remotepath: PathBuf, localpath: PathBuf) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
-            let remotepath = path_from_string(self.cwd.clone(), remotepath);
+            let remotepath = path_from_base(self.cwd.as_deref(), remotepath);
 
-            let mut buf = String::new();
-            let mut file = client.open(&remotepath).map_err(excp_from_err)?;
-            file.read_to_string(&mut buf).map_err(excp_from_err)?;
+            let mut local = fs::File::open(localpath).map_err(excp_from_err)?;
+            let mut remote = client.open(&remotepath).map_err(excp_from_err)?;
 
-            return fs::write(&localpath, buf).map_err(excp_from_err);
+            io::copy(&mut remote, &mut local).map_err(excp_from_err)?;
+
+            return Ok(());
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
@@ -388,14 +385,16 @@ impl SFTPClient {
     ///
     /// * `localpath` - The path to the local file.
     /// * `remotepath` - The remote path to copy the file to.
-    pub fn put(&mut self, localpath: String, remotepath: String) -> PyResult<()> {
+    pub fn put(&mut self, localpath: PathBuf, remotepath: PathBuf) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
-            let remotepath = path_from_string(self.cwd.clone(), remotepath);
+            let remotepath = path_from_base(self.cwd.as_deref(), &remotepath);
 
-            let content = fs::read_to_string(&localpath).map_err(excp_from_err)?;
-            let mut file = client.create(&remotepath).map_err(excp_from_err)?;
+            let mut local = fs::File::open(localpath).map_err(excp_from_err)?;
+            let mut remote = client.create(&remotepath).map_err(excp_from_err)?;
 
-            return file.write_all(content.as_bytes()).map_err(excp_from_err);
+            io::copy(&mut local, &mut remote).map_err(excp_from_err)?;
+
+            return Ok(());
         }
 
         Err(SFTPException::new_err("SFTP session not open".to_string()))
