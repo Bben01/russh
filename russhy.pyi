@@ -1,5 +1,4 @@
 """ An SSH library for Python; written in Rust. """
-
 from _typeshed import GenericPath
 from typing import Optional
 
@@ -334,15 +333,19 @@ class SSHClient:
 
         ...
 
-    def exec_command(self, command: str) -> ExecOutput:
+    def exec_command(self, command: str, detach: bool = False) -> Optional[ExecOutput]:
         """
         Executes a command using the established session and returns the output.
 
         Args:
             command (str): The command to run.
+            detach (bool): detach the command. Will return None
+
+        Note:
+            detach will leak the channel
 
         Returns:
-            The command's output.
+            The command's output, unless run with detach=True.
         """
 
         ...

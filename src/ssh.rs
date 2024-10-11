@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::error::Error;
-use std::fs;
+use std::{fs, mem};
 use std::io::{self, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -486,7 +486,9 @@ impl SSHClient {
     /// # Arguments
     ///
     /// * `command` - The command to run.
-    pub fn exec_command(&self, command: String) -> PyResult<ExecOutput> {
+    /// * `detach` - do not wait for an output
+    #[pyo3(signature = (command, detach=None))]
+    pub fn exec_command(&self, command: String, detach: Option<bool>) -> PyResult<Option<ExecOutput>> {
         let mut stdin = None;
         let mut stdout = None;
         let mut stderr = None;
@@ -495,6 +497,11 @@ impl SSHClient {
         if let Some(sess) = &self.sess {
             let mut chan = sess.channel_session().map_err(excp_from_err)?;
             chan.exec(&command).map_err(excp_from_err)?;
+            
+            if detach.unwrap_or(false) {
+                mem::forget(chan);
+                return Ok(None)
+            }
 
             stdin = Some(chan.stream(0));
             stdout = Some(chan.stream(0));
@@ -502,12 +509,12 @@ impl SSHClient {
             channel = Some(chan);
         }
 
-        Ok(ExecOutput {
+        Ok(Some(ExecOutput {
             channel,
             stdin,
             stdout,
             stderr,
-        })
+        }))
     }
 
     pub fn authenticated(&self) -> bool {
