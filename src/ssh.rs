@@ -2,11 +2,11 @@
 
 use std::borrow::Cow;
 use std::error::Error;
-use std::{fs, mem};
 use std::io::{self, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use std::{fs, mem};
 
 use crate::auth::{Auth, AuthMethod};
 use pyo3::exceptions::{
@@ -488,7 +488,11 @@ impl SSHClient {
     /// * `command` - The command to run.
     /// * `detach` - do not wait for an output
     #[pyo3(signature = (command, detach=None))]
-    pub fn exec_command(&self, command: String, detach: Option<bool>) -> PyResult<Option<ExecOutput>> {
+    pub fn exec_command(
+        &self,
+        command: String,
+        detach: Option<bool>,
+    ) -> PyResult<Option<ExecOutput>> {
         let mut stdin = None;
         let mut stdout = None;
         let mut stderr = None;
@@ -497,10 +501,10 @@ impl SSHClient {
         if let Some(sess) = &self.sess {
             let mut chan = sess.channel_session().map_err(excp_from_err)?;
             chan.exec(&command).map_err(excp_from_err)?;
-            
+
             if detach.unwrap_or(false) {
                 mem::forget(chan);
-                return Ok(None)
+                return Ok(None);
             }
 
             stdin = Some(chan.stream(0));
@@ -515,6 +519,23 @@ impl SSHClient {
             stdout,
             stderr,
         }))
+    }
+
+    /// Invoke a shell
+    ///
+    /// # Notes
+    ///
+    /// This function currently doesn't return anything,
+    /// it only allocates a pty and requests a shell from the server.
+    pub fn invoke_shell(&self) -> PyResult<()> {
+        if let Some(sess) = &self.sess {
+            let mut chan = sess.channel_session().map_err(excp_from_err)?;
+            chan.request_pty("vt100", None, None)
+                .map_err(excp_from_err)?;
+            chan.shell().map_err(excp_from_err)?;
+        }
+
+        Ok(())
     }
 
     pub fn authenticated(&self) -> bool {

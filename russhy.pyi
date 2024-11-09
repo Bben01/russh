@@ -350,6 +350,15 @@ class SSHClient:
 
         ...
 
+    def invoke_shell(self):
+        """
+        Invoke a shell
+        
+        This function doesn't return anything (for now)
+        """
+
+        ...
+
     def authenticated(self) -> bool:
         """ Checks if the current session is authenticated. """
 

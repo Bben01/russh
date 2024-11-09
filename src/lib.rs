@@ -2,11 +2,11 @@
 
 use pyo3::prelude::*;
 
-use ssh::*;
 use auth::*;
+use ssh::*;
 
-mod ssh;
 mod auth;
+mod ssh;
 
 #[pymodule]
 fn russhy(py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
