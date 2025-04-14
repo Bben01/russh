@@ -1,6 +1,6 @@
 [package]
 name = "russhy"
-version = "0.6.5"
+version = "0.7.0"
 edition = "2021"
 authors = ["Nikhil Prabhu <nikhilprabhu98@gmail.com>"]
 license = "MIT"
@@ -14,8 +14,9 @@ maintenance = { status = "experimental" }
 crate-type = ["cdylib"]
 
 [dependencies]
+libssh2-sys = "0.3.1"
 ssh2 = "0.9.4"
 
 [dependencies.pyo3]
-version = "0.22.3"
+version = "0.24.1"
 features = ["abi3-py37", "extension-module"]

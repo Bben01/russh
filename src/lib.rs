@@ -10,9 +10,9 @@ mod ssh;
 
 #[pymodule]
 fn russhy(py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
-    m.add("SessionException", py.get_type_bound::<SessionException>())?;
-    m.add("SFTPException", py.get_type_bound::<SFTPException>())?;
-    m.add("SSHException", py.get_type_bound::<SSHException>())?;
+    m.add("SessionException", py.get_type::<SessionException>())?;
+    m.add("SFTPException", py.get_type::<SFTPException>())?;
+    m.add("SSHException", py.get_type::<SSHException>())?;
 
     m.add_class::<Password>()?;
     m.add_class::<PrivateKeyFile>()?;

@@ -42,6 +42,9 @@ where
     if let Some(ssh_err) = err.downcast_ref::<ssh2::Error>() {
         return match ssh_err.code() {
             ErrorCode::Session(_) => SessionException::new_err(ssh_err.to_string()),
+            ErrorCode::SFTP(
+                libssh2_sys::LIBSSH2_FX_NO_SUCH_FILE | libssh2_sys::LIBSSH2_FX_NO_SUCH_PATH,
+            ) => PyFileNotFoundError::new_err(ssh_err.to_string()),
             ErrorCode::SFTP(_) => SFTPException::new_err(ssh_err.to_string()),
         };
     }
@@ -257,10 +260,8 @@ impl SFTPClient {
     ///
     /// * `dir` The directory to create.
     /// * `mode` - POSIX-style permissions for the newly-created folder. Defaults to 511.
-    #[pyo3(signature = (dir, mode=None))]
-    pub fn mkdir(&mut self, dir: PathBuf, mode: Option<i32>) -> PyResult<()> {
-        let mode = mode.unwrap_or(511);
-
+    #[pyo3(signature = (dir, mode=511))]
+    pub fn mkdir(&mut self, dir: PathBuf, mode: i32) -> PyResult<()> {
         if let Some(client) = self.client.as_mut() {
             let path = path_from_base(self.cwd.as_deref(), &dir);
             return client.mkdir(&path, mode).map_err(excp_from_err);
@@ -436,17 +437,15 @@ impl SSHClient {
     /// * `username` - The SSH username. Defaults to root
     /// * `port` The SSH port. Defaults to 22.
     /// * `timeout` - The timeout for the TCP connection (in seconds). Defaults to 30.
-    #[pyo3(signature = (host, auth, username=None, port=None, timeout=None))]
+    #[pyo3(signature = (host, auth, username="root", port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT))]
     pub fn connect(
         &mut self,
         host: String,
         auth: AuthMethod,
-        username: Option<&str>,
-        port: Option<u16>,
-        timeout: Option<u64>,
+        username: &str,
+        port: u16,
+        timeout: u64,
     ) -> PyResult<()> {
-        let port = port.unwrap_or(DEFAULT_PORT);
-        let timeout = timeout.unwrap_or(DEFAULT_TIMEOUT);
         let addr: SocketAddr = (host, port)
             .to_socket_addrs()
             .map_err(excp_from_err)?
@@ -459,7 +458,7 @@ impl SSHClient {
         let mut sess = Session::new().map_err(excp_from_err)?;
         sess.set_tcp_stream(tcp);
         sess.handshake().map_err(excp_from_err)?;
-        auth.authenticate(username.unwrap_or("root"), &mut sess)
+        auth.authenticate(username, &mut sess)
             .map_err(excp_from_err)?;
 
         self.sess.replace(sess);
@@ -487,11 +486,11 @@ impl SSHClient {
     ///
     /// * `command` - The command to run.
     /// * `detach` - do not wait for an output
-    #[pyo3(signature = (command, detach=None))]
+    #[pyo3(signature = (command, detach=false))]
     pub fn exec_command(
         &self,
         command: String,
-        detach: Option<bool>,
+        detach: bool,
     ) -> PyResult<Option<ExecOutput>> {
         let mut stdin = None;
         let mut stdout = None;
@@ -502,7 +501,7 @@ impl SSHClient {
             let mut chan = sess.channel_session().map_err(excp_from_err)?;
             chan.exec(&command).map_err(excp_from_err)?;
 
-            if detach.unwrap_or(false) {
+            if detach {
                 mem::forget(chan);
                 return Ok(None);
             }
@@ -539,7 +538,7 @@ impl SSHClient {
     }
 
     pub fn authenticated(&self) -> bool {
-        self.sess.as_ref().is_some_and(|sess| sess.authenticated())
+        self.sess.as_ref().is_some_and(Session::authenticated)
     }
 
     /// Closes the underlying session.
