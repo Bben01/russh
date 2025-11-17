@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "russhy"
+version = "0.7.1"
 requires-python = ">=3.7"
 license = "MIT"
 classifiers = [
@@ -29,3 +30,6 @@ classifiers = [
 [tool.maturin]
 features = ["pyo3/extension-module"]
 strip = true
+
+[project.optional-dependencies]
+test = ["pytest"]
