@@ -6,7 +6,7 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{fs, mem};
+use std::{fs, thread};
 
 use crate::auth::{Auth, AuthMethod};
 use pyo3::exceptions::{
@@ -25,6 +25,36 @@ const DEFAULT_TIMEOUT: u64 = 30;
 pyo3::create_exception!(russhy, SessionException, PyException);
 pyo3::create_exception!(russhy, SFTPException, PyException);
 pyo3::create_exception!(russhy, SSHException, PyException);
+
+#[pyclass]
+/// Represents a tunnel to a remote server.
+pub struct Tunnel(Channel);
+
+#[pymethods]
+impl Tunnel {
+    /// Reads and returns the contents of the file.
+    pub fn read(&mut self) -> PyResult<Cow<'_, [u8]>> {
+        let mut buf = Vec::new();
+        self.0.read_to_end(&mut buf).map_err(excp_from_err)?;
+
+        Ok(Cow::from(buf))
+    }
+
+    /// Writes the specified data to the file.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The data to write to the file.
+    pub fn write(&mut self, data: &[u8]) -> PyResult<()> {
+        self.0.write_all(data).map_err(excp_from_err)?;
+        self.0.flush().map_err(excp_from_err)
+    }
+
+    /// Closes the tunnel.
+    pub fn close(&mut self) -> PyResult<()> {
+        self.0.close().map_err(excp_from_err)
+    }
+}
 
 /// Convenience function to map Rust errors to appropriate Python exceptions.
 ///
@@ -101,7 +131,7 @@ impl ExecOutput {
     /// Reads the contents of the `stdout` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stdout(&mut self) -> PyResult<Cow<[u8]>> {
+    fn read_stdout(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
 
         if let Some(mut stdout) = self.stdout.take() {
@@ -114,7 +144,7 @@ impl ExecOutput {
     /// Reads the contents of the `stderr` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stderr(&mut self) -> PyResult<Cow<[u8]>> {
+    fn read_stderr(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
 
         if let Some(mut stderr) = self.stderr.take() {
@@ -187,7 +217,7 @@ pub struct File(pub ssh2::File);
 #[pymethods]
 impl File {
     /// Reads and returns the contents of the file.
-    pub fn read(&mut self) -> PyResult<Cow<[u8]>> {
+    pub fn read(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
         self.0.read_to_end(&mut buf).map_err(excp_from_err)?;
 
@@ -502,7 +532,13 @@ impl SSHClient {
             chan.exec(&command).map_err(excp_from_err)?;
 
             if detach {
-                mem::forget(chan);
+                thread::spawn(move || {
+                    let mut stdout = Vec::new();
+                    let mut stderr = Vec::new();
+                    let _ = chan.read_to_end(&mut stdout);
+                    let _ = chan.stderr().read_to_end(&mut stderr);
+                    let _ = chan.wait_close();
+                });
                 return Ok(None);
             }
 
@@ -535,6 +571,19 @@ impl SSHClient {
         }
 
         Ok(())
+    }
+
+    pub fn open_tunnel(&self, host: String, port: u16) -> PyResult<Tunnel> {
+        if let Some(sess) = &self.sess {
+            let tun = sess
+                .channel_direct_tcpip(&host, port, None)
+                .map_err(excp_from_err)?;
+            return Ok(Tunnel(tun));
+        }
+
+        Err(SessionException::new_err(
+            "No active SSH session".to_string(),
+        ))
     }
 
     pub fn authenticated(&self) -> bool {
