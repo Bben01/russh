@@ -6,7 +6,7 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{fs, mem};
+use std::fs;
 
 use crate::auth::{Auth, AuthMethod};
 use pyo3::exceptions::{
@@ -25,6 +25,106 @@ const DEFAULT_TIMEOUT: u64 = 30;
 pyo3::create_exception!(russhy, SessionException, PyException);
 pyo3::create_exception!(russhy, SFTPException, PyException);
 pyo3::create_exception!(russhy, SSHException, PyException);
+
+#[pyclass]
+/// Represents an interactive shell.
+pub struct Shell {
+    channel: Option<Channel>,
+    /// The `stdin` stream.
+    stdin: Option<Stream>,
+    /// The `stdout` stream's contents.
+    stdout: Option<Stream>,
+    /// The `stderr` stream's contents.
+    stderr: Option<Stream>,
+}
+
+#[pymethods]
+impl Shell {
+    /// Writes the provided data to the `stdin` stream and closes it.
+    ///
+    /// **NOTE**: Future calls will discard the provided data without doing anything.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The data to write to the stream.
+    pub fn write_stdin(&mut self, data: &[u8]) -> PyResult<()> {
+        if let Some(mut stdin) = self.stdin.take() {
+            if let Some(channel) = self.channel.as_mut() {
+                stdin.write_all(data).map_err(excp_from_err)?;
+                stdin.flush().map_err(excp_from_err)?;
+
+                channel.send_eof().map_err(excp_from_err)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Reads the contents of the `stdout` stream and consumes it.
+    ///
+    /// **NOTE**: Future calls will return an empty string.
+    fn read_stdout(&mut self) -> PyResult<Cow<'_, [u8]>> {
+        let mut buf = Vec::new();
+
+        if let Some(mut stdout) = self.stdout.take() {
+            stdout.read_to_end(&mut buf).map_err(excp_from_err)?;
+        }
+
+        Ok(Cow::from(buf))
+    }
+
+    /// Reads the contents of the `stderr` stream and consumes it.
+    ///
+    /// **NOTE**: Future calls will return an empty string.
+    fn read_stderr(&mut self) -> PyResult<Cow<'_, [u8]>> {
+        let mut buf = Vec::new();
+
+        if let Some(mut stderr) = self.stderr.take() {
+            stderr.read_to_end(&mut buf).map_err(excp_from_err)?;
+        }
+
+        Ok(Cow::from(buf))
+    }
+
+    /// Retrieves the exit status of the command and closes the channel and all streams.
+    ///
+    /// **NOTE**: Future calls will return 0.
+    ///
+    /// **NOTE**: Future reads of the `stdout` or `stderr` streams will return empty strings.
+    fn exit_status(&mut self) -> PyResult<i32> {
+        let mut exit_status = 0;
+
+        if let Some(mut chan) = self.channel.take() {
+            let mut stdout = String::new();
+            let mut stderr = String::new();
+
+            chan.read_to_string(&mut stdout).map_err(excp_from_err)?;
+            chan.stderr()
+                .read_to_string(&mut stderr)
+                .map_err(excp_from_err)?;
+
+            chan.wait_close().map_err(excp_from_err)?;
+            exit_status = chan.exit_status().map_err(excp_from_err)?;
+        }
+
+        Ok(exit_status)
+    }
+
+    /// Consumes all streams and closes the underlying channel if it exists and is active.
+    ///
+    /// If there is no active channel, then this function does nothing.
+    fn close(&mut self) -> PyResult<()> {
+        self.stdin.take();
+        self.stdout.take();
+        self.stderr.take();
+
+        if let Some(mut channel) = self.channel.take() {
+            channel.close().map_err(excp_from_err)?;
+        }
+
+        Ok(())
+    }
+}
 
 /// Convenience function to map Rust errors to appropriate Python exceptions.
 ///
@@ -101,7 +201,7 @@ impl ExecOutput {
     /// Reads the contents of the `stdout` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stdout(&mut self) -> PyResult<Cow<[u8]>> {
+    fn read_stdout(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
 
         if let Some(mut stdout) = self.stdout.take() {
@@ -114,7 +214,7 @@ impl ExecOutput {
     /// Reads the contents of the `stderr` stream and consumes it.
     ///
     /// **NOTE**: Future calls will return an empty string.
-    fn read_stderr(&mut self) -> PyResult<Cow<[u8]>> {
+    fn read_stderr(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
 
         if let Some(mut stderr) = self.stderr.take() {
@@ -187,7 +287,7 @@ pub struct File(pub ssh2::File);
 #[pymethods]
 impl File {
     /// Reads and returns the contents of the file.
-    pub fn read(&mut self) -> PyResult<Cow<[u8]>> {
+    pub fn read(&mut self) -> PyResult<Cow<'_, [u8]>> {
         let mut buf = Vec::new();
         self.0.read_to_end(&mut buf).map_err(excp_from_err)?;
 
@@ -502,7 +602,7 @@ impl SSHClient {
             chan.exec(&command).map_err(excp_from_err)?;
 
             if detach {
-                mem::forget(chan);
+                chan.send_eof().map_err(excp_from_err)?;
                 return Ok(None);
             }
 
@@ -526,15 +626,36 @@ impl SSHClient {
     ///
     /// This function currently doesn't return anything,
     /// it only allocates a pty and requests a shell from the server.
-    pub fn invoke_shell(&self) -> PyResult<()> {
+    #[pyo3(signature = (detach=false))]
+    pub fn invoke_shell(&self, detach: bool) -> PyResult<Option<Shell>> {
+        let mut stdin = None;
+        let mut stdout = None;
+        let mut stderr = None;
+        let mut channel = None;
+
         if let Some(sess) = &self.sess {
             let mut chan = sess.channel_session().map_err(excp_from_err)?;
             chan.request_pty("vt100", None, None)
                 .map_err(excp_from_err)?;
             chan.shell().map_err(excp_from_err)?;
+
+            if detach {
+                chan.send_eof().map_err(excp_from_err)?;
+                return Ok(None);
+            }
+
+            stdin = Some(chan.stream(0));
+            stdout = Some(chan.stream(0));
+            stderr = Some(chan.stderr());
+            channel = Some(chan);
         }
 
-        Ok(())
+        Ok(Some(Shell {
+            channel,
+            stdin,
+            stdout,
+            stderr,
+        }))
     }
 
     pub fn authenticated(&self) -> bool {
